@@ -1,0 +1,134 @@
+---
+- name: Install and configure PostgreSQL 14 on Ubuntu
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Install Apache2
+      apt:
+        name: apache2
+        state: present
+        update_cache: no
+
+    - name: Install Java 17
+      apt:
+        name: openjdk-17-jdk
+        state: present
+
+    - name: Install Java 8
+      apt:
+        name: openjdk-8-jdk
+        state: present
+
+    - name: Ensure necessary dependencies are installed
+      apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - wget
+        - ca-certificates
+        - gnupg
+        - lsb-release
+
+    - name: Add PostgreSQL official GPG key
+      apt_key:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        state: present
+
+    - name: Add PostgreSQL 14 repository
+      apt_repository:
+        repo: "deb http://apt.postgresql.org/pub/repos/apt/ {{ ansible_distribution_release }}-pgdg main"
+        state: present
+
+    - name: Update apt cache
+      apt:
+        update_cache: no
+
+    - name: Install PostgreSQL 14 server and client
+      apt:
+        name:
+          - postgresql-14
+          - postgresql-client-14
+        state: present
+
+    - name: Ensure PostgreSQL service is enabled and started
+      systemd:
+        name: postgresql
+        enabled: yes
+        state: started
+
+    - name: Configure PostgreSQL to use TimescaleDB
+      blockinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        block: |
+          shared_preload_libraries = 'timescaledb'
+      notify: Restart PostgreSQL
+
+    - name: Set listen_addresses to '*'
+      lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#?listen_addresses ='
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL
+
+    - name: Set port to 5400
+      lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#?port ='
+        line: "port = 5400"
+      notify: Restart PostgreSQL
+
+    - name: Set max_connections to 400
+      lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#?max_connections ='
+        line: "max_connections = 400"
+      notify: Restart PostgreSQL
+
+    - name: Set password_encryption to md5
+      lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#?password_encryption ='
+        line: "password_encryption = md5"
+      notify: Restart PostgreSQL
+
+    - name: Update pg_hba.conf file
+      blockinfile:
+        path: /etc/postgresql/14/main/pg_hba.conf
+        block: |
+          # BEGIN ANSIBLE MANAGED BLOCK
+          # Database administrative login by Unix domain socket
+          local   all             postgres                                peer
+
+          # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+          # "local" is for Unix domain socket connections only
+          local   all             all                                     peer
+          # IPv4 local connections:
+          host    all             all             127.0.0.1/32            trust
+          # IPv6 local connections:
+          host    all             all             ::1/128                 md5
+          # Allow replication connections from localhost, by a user with the
+          # replication privilege.
+          local   replication     all                                     peer
+          host    replication     all             127.0.0.1/32            md5
+          host    replication     all             ::1/128                 md5
+          host    all             all             0.0.0.0/0               md5
+          # END ANSIBLE MANAGED BLOCK
+      notify: Restart PostgreSQL
+
+
+    - name: Verify psql command availability
+      command: psql --version
+      register: psql_version
+
+    - name: Debug psql version
+      debug:
+        msg: "psql version is {{ psql_version.stdout }}"
+
+  handlers:
+    - name: Restart PostgreSQL
+      systemd:
+        name: postgresql
+        state: restarted
+
