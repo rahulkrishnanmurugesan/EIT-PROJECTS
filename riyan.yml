@@ -15,10 +15,10 @@
         name: openjdk-17-jdk
         state: present
 
-    - name: Install Java 8
-      apt:
-        name: openjdk-8-jdk
-        state: present
+  #  - name: Install Java 8
+   #   apt:
+    #    name: openjdk-8-jdk
+     #   state: present
 
     - name: Ensure necessary dependencies are installed
       apt:
